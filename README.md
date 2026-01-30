@@ -2,6 +2,24 @@
 
 Fast GLM-4.7-Flash-PRISM wrapper for Claude Code with Google Search MCP and Vision Proxy integration.
 
+## Architecture Overview
+
+This wrapper uses **MCP (Model Context Protocol) servers** for Google Search and Vision functionality, providing faster and more reliable routing compared to traditional proxy servers. The included Python proxy servers in `utils/` can be used as standalone alternatives if needed.
+
+### MCP vs Proxy Approach
+
+**MCP Servers (Recommended/Default):**
+- Direct integration with Claude Code via stdio
+- Faster request/response times
+- Better error handling and reconnection
+- Used by default in this wrapper
+
+**Python Proxy Servers (Alternative):**
+- Located in `utils/` directory
+- Can be run as standalone HTTP servers
+- Useful for non-Claude Code integrations
+- Require manual server management
+
 ## Features
 
 - **Fast GLM-4.7-Flash Model**: Optimized for RTX 4090 24GB with 198k context
@@ -25,7 +43,7 @@ Fast GLM-4.7-Flash-PRISM wrapper for Claude Code with Google Search MCP and Visi
 
 ```bash
 cd /path/to/your/AI/directory
-git clone https://github.com/YOUR_USERNAME/GLM-4.7-Flash-Rapport.git
+git clone https://github.com/Indras-Mirror/GLM-4.7-Flash-Rapport.git
 cd GLM-4.7-Flash-Rapport
 ```
 
@@ -114,6 +132,77 @@ mkdir -p ~/.claude/skills
 cp -r skills/* ~/.claude/skills/
 ```
 
+## Getting API Keys
+
+### OpenRouter API Key (for Vision)
+
+1. Visit https://openrouter.ai/
+2. Create an account and generate an API key
+3. Set `OPENROUTER_API_KEY` environment variable
+
+### Google Custom Search API (Detailed Setup)
+
+#### Step 1: Create Google Cloud Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Sign in with your Google account
+3. Click on the project dropdown at the top
+4. Click "New Project"
+5. Enter a project name (e.g., "Claude Code Search")
+6. Click "Create"
+
+#### Step 2: Enable Custom Search API
+
+1. In the Google Cloud Console, navigate to:
+   **APIs & Services > Library**
+2. Search for "Custom Search API"
+3. Click on it and press "Enable"
+
+#### Step 3: Create API Credentials
+
+1. Navigate to **APIs & Services > Credentials**
+2. Click "Create Credentials"
+3. Select "API Key"
+4. Copy the generated API key
+5. (Optional) Restrict the key:
+   - Click "Edit API key"
+   - Under "Application restrictions", select "None" for local testing
+   - Under "API restrictions", select only "Custom Search API"
+   - Click "Save"
+
+#### Step 4: Create Custom Search Engine
+
+1. Go to [Google Custom Search](https://cse.google.com/)
+2. Click "Add"
+3. Enter the sites to search (e.g., `*.www.google.com` to search the entire web)
+4. Give your search engine a name
+5. Click "Create"
+
+#### Step 5: Configure Search Engine
+
+1. After creation, click "Control Panel" for your search engine
+2. Under "Setup", find "Search engine ID"
+3. Copy your CX ID (Search engine ID)
+4. **Important**: Under "Setup", enable "Search the entire web" toggle
+   - This allows searching beyond just your specified sites
+5. Click "Save" if needed
+
+#### Step 6: Set Environment Variables
+
+```bash
+export GOOGLE_SEARCH_API_KEY="AIzaSy...your-key-here"
+export GOOGLE_SEARCH_CX="017576662512468239146:your-cx-here"
+```
+
+#### Step 7: Test Your Setup
+
+```bash
+# Test the API directly
+curl "https://www.googleapis.com/customsearch/v1?key=$GOOGLE_SEARCH_API_KEY&cx=$GOOGLE_SEARCH_CX&q=test&num=1"
+```
+
+You should see JSON results with search data.
+
 ## Usage
 
 ### Basic Usage
@@ -183,22 +272,11 @@ GLM-4.7-Flash-Rapport/
 │   └── vision-analysis/
 │       ├── vision-analysis.md
 │       └── skill.json
-└── CLAUDE.md.template         # Template for custom instructions
+├── utils/                     # Standalone proxy servers (optional)
+├── CLAUDE.md.template         # Template for custom instructions
+├── .env.example              # Environment variable template
+└── install.sh                # Installation script
 ```
-
-## Getting API Keys
-
-### OpenRouter API Key
-1. Visit https://openrouter.ai/
-2. Create an account and generate an API key
-3. Set `OPENROUTER_API_KEY` environment variable
-
-### Google Custom Search API
-1. Visit https://console.cloud.google.com/
-2. Create a project and enable Custom Search API
-3. Create credentials (API Key)
-4. Create a Custom Search Engine at https://cse.google.com/
-5. Set `GOOGLE_SEARCH_API_KEY` and `GOOGLE_SEARCH_CX`
 
 ## Troubleshooting
 
@@ -213,7 +291,14 @@ GLM-4.7-Flash-Rapport/
 
 ### Google Search not working
 - Verify `GOOGLE_SEARCH_API_KEY` and `GOOGLE_SEARCH_CX` are set
+- Ensure Custom Search API is enabled in Google Cloud Console
+- Ensure your search engine is configured to "Search the entire web"
 - Test MCP server: `claude mcp list`
+
+### Google Search returns no results
+- Check that your Custom Search Engine has "Search the entire web" enabled
+- Verify your API key has Custom Search API enabled
+- Try testing with curl to see the raw error response
 
 ## License
 

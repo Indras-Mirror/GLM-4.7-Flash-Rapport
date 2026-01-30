@@ -39,3 +39,7 @@ Thumbs.db
 
 # Claude data
 .claude-data/
+
+# Local test files
+test-wrapper.sh
+.env.local
