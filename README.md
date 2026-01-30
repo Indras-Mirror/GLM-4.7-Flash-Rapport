@@ -4,21 +4,31 @@ Fast GLM-4.7-Flash-PRISM wrapper for Claude Code with Google Search MCP and Visi
 
 ## Architecture Overview
 
-This wrapper uses **MCP (Model Context Protocol) servers** for Google Search and Vision functionality, providing faster and more reliable routing compared to traditional proxy servers. The included Python proxy servers in `utils/` can be used as standalone alternatives if needed.
+This wrapper uses **MCP (Model Context Protocol) servers** for Google Search and Vision functionality.
+
+**Why MCP Instead of Proxies?**
+
+We initially used standalone HTTP proxy servers (included in `utils/`) that intercepted API requests and injected tool results. While functional, proxies caused:
+- **Bloated conversation chains** - Each tool use added 2-3 extra turns
+- **Added latency** - Extra HTTP round-trips for each request
+- **Complex setup** - Required running separate proxy servers
+
+MCP servers solve these problems with direct stdio integration, cleaner conversations, and faster responses.
 
 ### MCP vs Proxy Approach
 
 **MCP Servers (Recommended/Default):**
-- Direct integration with Claude Code via stdio
+- Direct stdio integration with Claude Code
+- Cleaner conversation flow (no extra turns)
 - Faster request/response times
 - Better error handling and reconnection
 - Used by default in this wrapper
 
-**Python Proxy Servers (Alternative):**
-- Located in `utils/` directory
-- Can be run as standalone HTTP servers
+**Proxy Servers (Alternative - in `utils/`):**
+- Standalone HTTP servers for experimentation
 - Useful for non-Claude Code integrations
-- Require manual server management
+- Available if you want to explore different approaches
+- See `utils/README.md` for details
 
 ## Features
 

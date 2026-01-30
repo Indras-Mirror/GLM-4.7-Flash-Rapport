@@ -1,0 +1,25 @@
+{
+  "name": "googlesearch-proxy",
+  "version": "2.1.1",
+  "description": "Enhanced GoogleSearch proxy with llama.cpp support",
+  "type": "module",
+  "main": "server-enhanced.js",
+  "scripts": {
+    "start": "node server-enhanced.js",
+    "start:simple": "node server.js",
+    "start:custom": "node server-enhanced.js --port 9736 --backend $BACKEND_URL"
+  },
+  "keywords": [
+    "google",
+    "search",
+    "proxy",
+    "llm",
+    "claude",
+    "auto-execution"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
