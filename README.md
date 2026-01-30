@@ -1,53 +1,48 @@
 # GLM-4.7-Flash-Rapport
 
-Fast GLM-4.7-Flash-PRISM wrapper for Claude Code with Google Search MCP and Vision Proxy integration.
-
-## Architecture Overview
-
-This wrapper uses **MCP (Model Context Protocol) servers** for Google Search and Vision functionality.
-
-**Why MCP Instead of Proxies?**
-
-We initially used standalone HTTP proxy servers (included in `utils/`) that intercepted API requests and injected tool results. While functional, proxies caused:
-- **Bloated conversation chains** - Each tool use added 2-3 extra turns
-- **Added latency** - Extra HTTP round-trips for each request
-- **Complex setup** - Required running separate proxy servers
-
-MCP servers solve these problems with direct stdio integration, cleaner conversations, and faster responses.
-
-### MCP vs Proxy Approach
-
-**MCP Servers (Recommended/Default):**
-- Direct stdio integration with Claude Code
-- Cleaner conversation flow (no extra turns)
-- Faster request/response times
-- Better error handling and reconnection
-- Used by default in this wrapper
-
-**Proxy Servers (Alternative - in `utils/`):**
-- Standalone HTTP servers for experimentation
-- Useful for non-Claude Code integrations
-- Available if you want to explore different approaches
-- See `utils/README.md` for details
+Fast GLM-4.7-Flash-PRISM wrapper for Claude Code with Google Search and Vision integration.
 
 ## Features
 
 - **Fast GLM-4.7-Flash Model**: Optimized for RTX 4090 24GB with 198k context
-- **Google Search MCP**: Fast web search via Google Custom Search API
-- **Vision Proxy**: Image analysis via OpenRouter integration
-- **Image Routing Proxy**: Automatic routing of image requests to vision backend
+- **Google Search**: Fast web search via Google Custom Search API (MCP)
+- **Vision Support**: Image analysis via OpenRouter integration (auto-routing proxy)
 - **Separate Conversation History**: Isolated conversation data per wrapper
 - **Auto Service Management**: Automatic server startup/shutdown
 
 ### Image Routing
 
-The wrapper automatically detects image requests and routes them to a vision-capable model (OpenRouter) while text requests go to the local GLM-4.7-Flash model.
+The wrapper uses an HTTP proxy that intercepts Claude Code API requests:
+
+1. **Text requests** → forwarded to local GLM-4.7-Flash model
+2. **Image requests** → detected by checking for `type: "image"` blocks → converted to OpenAI format → sent to OpenRouter vision API → response converted back to Anthropic format
+
+```python
+# Image routing logic
+if has_image_content(request):
+    # Route to OpenRouter (with format conversion)
+    target_url = "https://openrouter.ai/api/v1/chat/completions"
+else:
+    # Route to local GLM model
+    target_url = local_api_url
+```
 
 ![Image Routing](assets/Image-Routing-Rapport.png)
 
 ### Google Search Integration
 
-Google Search is available via the MCP server, providing fast web search results directly within Claude Code.
+The wrapper disables Claude's built-in WebSearch and replaces it with Google Search via MCP:
+
+1. `"disallowedTools": ["WebSearch"]` → disables Claude's internal search
+2. System prompt injection → tells Claude about `google_search` MCP tool
+3. When search needed → Claude uses `google_search` MCP tool instead
+4. MCP server (stdio) → calls Google API → returns results directly
+
+```json
+// Wrapper settings
+"disallowedTools": ["WebSearch"],  // Disable built-in
+"appendSystemPrompt": "Use 'google_search' tool when..."  // Add MCP tool
+```
 
 ![Google Search](assets/WebSearch-Rapport.png)
 
@@ -88,21 +83,29 @@ pip install Pillow opencv-python numpy
 Create a `~/.glm-flash-env` file or add to your `~/.bashrc`:
 
 ```bash
-# GLM-Flash Server Configuration
+# ============================================================================
+# REQUIRED - GLM-4.7-Flash Model
+# ============================================================================
 export GLM_FLASH_SERVER_DIR="$HOME/AI/GLM-4.7-Flash-PRISM"
 export GLM_FLASH_PORT="8082"
 
-# OpenRouter API Key (for vision)
+# ============================================================================
+# OPTIONAL - Vision Support (for image analysis)
+# ============================================================================
+# Get key at: https://openrouter.ai/
 export OPENROUTER_API_KEY="your-openrouter-api-key"
+export OPENROUTER_MODEL="z-ai/glm-4.6v"
+export IMAGE_ROUTING_PROXY_PORT="9101"
 
-# Google Search API Credentials
+# ============================================================================
+# OPTIONAL - Google Search (for web search)
+# ============================================================================
+# See "Getting API Keys" section below for setup instructions
 export GOOGLE_SEARCH_API_KEY="your-google-api-key"
 export GOOGLE_SEARCH_CX="your-custom-search-engine-id"
-
-# Image Routing Proxy (optional)
-export IMAGE_ROUTING_PROXY_PORT="9101"
-export OPENROUTER_MODEL="z-ai/glm-4.6v"
 ```
+
+**Note**: The wrapper works without Vision or Google Search, but you'll only have text generation. Add both for full functionality.
 
 ### 4. Install the Wrapper
 
@@ -146,8 +149,6 @@ Add to your `~/.config/Claude/claude_desktop_config.json`:
 ```
 
 ### 6. Install Skills
-
-Copy skills to your Claude skills directory:
 
 ```bash
 mkdir -p ~/.claude/skills
@@ -209,14 +210,7 @@ cp -r skills/* ~/.claude/skills/
    - This allows searching beyond just your specified sites
 5. Click "Save" if needed
 
-#### Step 6: Set Environment Variables
-
-```bash
-export GOOGLE_SEARCH_API_KEY="AIzaSy...your-key-here"
-export GOOGLE_SEARCH_CX="017576662512468239146:your-cx-here"
-```
-
-#### Step 7: Test Your Setup
+#### Step 6: Test Your Setup
 
 ```bash
 # Test the API directly
@@ -227,38 +221,39 @@ You should see JSON results with search data.
 
 ## Usage
 
-### Basic Usage
-
 ```bash
-# Using the wrapper
+# Text generation
 glm-flash --skip "your prompt here"
+
+# With image (auto-routes to vision)
+glm-flash --skip "analyze this image" screenshot.png
+
+# With search (uses Google Search MCP)
+glm-flash --skip "what's the latest news about AI?"
 
 # Continue previous conversation
 glm-flash --continue
-
-# With image file (auto-routes to vision)
-glm-flash --skip "analyze this image" screenshot.png
 ```
 
-### Environment Variables
+## Environment Variables Reference
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GLM_FLASH_SERVER_DIR` | `$HOME/AI/GLM-4.7-Flash-PRISM` | Path to GLM model directory |
-| `GLM_FLASH_PORT` | `8082` | Local server port |
-| `OPENROUTER_API_KEY` | - | OpenRouter API key for vision |
-| `GOOGLE_SEARCH_API_KEY` | - | Google Custom Search API key |
-| `GOOGLE_SEARCH_CX` | - | Google Custom Search Engine ID |
-| `IMAGE_ROUTING_PROXY_PORT` | `9101` | Image routing proxy port |
-| `OPENROUTER_MODEL` | `z-ai/glm-4.6v` | Vision model to use |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GLM_FLASH_SERVER_DIR` | Yes | Path to GLM model directory |
+| `GLM_FLASH_PORT` | No | Local server port (default: 8082) |
+| `OPENROUTER_API_KEY` | For vision | OpenRouter API key for image analysis |
+| `GOOGLE_SEARCH_API_KEY` | For search | Google Custom Search API key |
+| `GOOGLE_SEARCH_CX` | For search | Google Custom Search Engine ID |
+| `IMAGE_ROUTING_PROXY_PORT` | No | Image routing proxy port (default: 9101) |
+| `OPENROUTER_MODEL` | No | Vision model to use (default: z-ai/glm-4.6v) |
 
-### MCP Tools
+## MCP Tools
 
-#### Google Search (`google_search`)
+### Google Search (`google_search`)
 - Fast web search via Google Custom Search API
 - Returns titles, snippets, and URLs
 
-#### Vision Proxy Tools
+### Vision Tools
 - `describe_image`: Natural language image description
 - `analyze_image`: Technical image properties (dimensions, colors)
 - `detect_faces`: Face detection and analysis
@@ -272,32 +267,16 @@ GLM-4.7-Flash-Rapport/
 │   └── glm-flash              # Main wrapper script
 ├── lib/
 │   ├── base-wrapper.sh        # Base wrapper framework
-│   ├── image-routing-proxy.py # Image routing proxy
-│   ├── google-search-mcp-settings.sh
+│   ├── image-routing-proxy.py # Image routing HTTP proxy
 │   └── mcp-servers/
-│       ├── googlesearch/
-│       │   └── mcp-server/
-│       │       ├── index.js
-│       │       └── package.json
-│       └── visionproxy/
-│           ├── mcp-server/
-│           │   ├── index.js
-│           │   └── package.json
-│           └── scripts/
-│               ├── analyze_image.py
-│               ├── detect_faces.py
-│               └── get_metadata.py
-├── skills/
-│   ├── google-search/
-│   │   ├── google-search.md
-│   │   └── skill.json
-│   └── vision-analysis/
-│       ├── vision-analysis.md
-│       └── skill.json
-├── utils/                     # Standalone proxy servers (optional)
-├── CLAUDE.md.template         # Template for custom instructions
-├── .env.example              # Environment variable template
-└── install.sh                # Installation script
+│       ├── googlesearch/      # Google Search MCP server
+│       └── visionproxy/       # Vision MCP server + Python scripts
+├── skills/                    # Claude Code skills
+├── utils/                     # Standalone proxy servers (alternative)
+├── assets/                    # Screenshots
+├── llama-cpp-settings.sh      # Reference llama.cpp configuration
+├── GLM-4.7-Flash-Rapport.sh   # Quick-launch script
+└── install.sh                 # Installation script
 ```
 
 ## Troubleshooting
@@ -317,10 +296,15 @@ GLM-4.7-Flash-Rapport/
 - Ensure your search engine is configured to "Search the entire web"
 - Test MCP server: `claude mcp list`
 
-### Google Search returns no results
-- Check that your Custom Search Engine has "Search the entire web" enabled
-- Verify your API key has Custom Search API enabled
-- Try testing with curl to see the raw error response
+## Architecture Notes
+
+### Why MCP Instead of HTTP Proxies?
+
+This wrapper initially used HTTP proxy servers (included in `utils/`) that intercepted API requests. While functional, proxies caused bloated conversation chains and added latency.
+
+MCP servers solve this with direct stdio integration, cleaner conversations, and faster responses. The proxy servers remain in `utils/` for experimentation or non-Claude Code integrations.
+
+See `utils/README.md` for details on the standalone proxy servers.
 
 ## License
 
