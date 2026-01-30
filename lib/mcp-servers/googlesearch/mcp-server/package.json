@@ -1,0 +1,27 @@
+{
+  "name": "googlesearch-mcp-server",
+  "version": "1.0.0",
+  "description": "Google Custom Search MCP Server for Claude Code",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "googlesearch-mcp-server": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "mcp",
+    "google-search",
+    "claude-code"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

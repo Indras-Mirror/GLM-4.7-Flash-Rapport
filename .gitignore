@@ -1,0 +1,41 @@
+# Node modules
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+glm-flash-env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude data
+.claude-data/

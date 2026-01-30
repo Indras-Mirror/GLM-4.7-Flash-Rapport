@@ -1,0 +1,199 @@
+# Claude Code + GLM Integration Instructions
+
+## Overview
+You have access to GLM (via Z.AI API) as an intelligent subagent for exploratory and context-heavy tasks. Automatically delegate to GLM when it preserves context and enables parallel work—no explicit user prompt needed.
+
+**Key Principle**: You decide when delegation helps. GLM handles exploration; you handle synthesis and implementation.
+
+---
+
+## Auto-Delegation Triggers
+
+Automatically delegate to GLM for:
+
+1. **Large codebase exploration** - Understanding structure across many files
+   - Example: "What testing frameworks does this project use?"
+   - GLM explores, you synthesize findings
+
+2. **Context-heavy analysis** - Complex dependency mapping or architecture understanding
+   - Example: "Map all dependencies for ServiceX before refactoring"
+   - GLM handles the scanning, you design the refactoring
+
+3. **Unfamiliar code investigation** - Learning new libraries or patterns in the project
+   - Example: "How does the authentication system work?"
+   - GLM explores unfamiliar patterns, you explain the implications
+
+4. **Parallel work scenarios** - Running explorations while implementing changes
+   - Example: You implement Feature A while GLM explores impact of changes
+
+5. **Routine scanning tasks** - Finding references, usages, patterns across files
+   - Example: "Find all places where X is used"
+   - GLM scans, you decide what to change
+
+6. **Scope assessment** - Understanding impact before large refactors
+   - Example: "Show me the impact if we remove this module"
+   - GLM analyzes dependencies, you make decisions
+
+---
+
+## When NOT to Delegate
+
+Skip GLM delegation for:
+- Simple, single-file changes
+- Direct, specific tasks ("implement this feature")
+- Requests where user explicitly says "without GLM"
+- Tasks that require making actual code changes (you do those)
+
+---
+
+## How to Use
+
+### Automatic Delegation (No Action Needed)
+Simply work normally—Claude Code will intelligently delegate when beneficial:
+
+```
+User: "What's the structure of the authentication system?"
+[Claude detects exploratory task, runs GLM in parallel]
+Claude: "[Delegating to GLM to map authentication code...]"
+Claude: "The auth system has X layers: (GLM findings) + (your synthesis)"
+```
+
+### Explicit GLM Usage
+If you want to guarantee GLM usage:
+
+```
+User: "Have GLM analyze the database layer"
+Claude: [Runs: glm --skip "analyze database layer structure"]
+```
+
+### Prevent GLM Usage
+If you want to bypass GLM:
+
+```
+User: "Don't use GLM—just read the files directly"
+Claude: [Analyzes without delegating]
+```
+
+---
+
+## Delegation Pattern
+
+When you decide to delegate:
+
+1. **Announce**: `[Delegating to GLM: {task description}]`
+2. **Run**: Execute `glm --skip "{task description}"`
+3. **Receive**: Get findings back from GLM
+4. **Synthesize**: Combine with your analysis for user
+5. **Decide**: User makes final decisions based on findings
+
+---
+
+## Integration Principles
+
+- **Preserve Context**: Large explorations handled by GLM, not consuming your context
+- **Parallel Efficiency**: GLM analyzes while you continue working
+- **Transparent Process**: Always inform user when GLM is used
+- **User Authority**: Findings inform decisions; user remains in control
+- **Smart Delegation**: Only delegate when it actually helps
+
+---
+
+## Background Task Management
+
+**CRITICAL**: Avoid indefinite background task execution. Follow these rules:
+
+1. **Monitor Background Tasks**: Use `TaskOutput` to check status regularly
+2. **Timeout Limits**:
+   - Short research tasks: Max 60 seconds wait
+   - Medium tasks: Max 5 minutes wait
+   - Long tasks: Must have explicit user approval with timeout
+3. **Action Items**:
+   - If task is still running after timeout, report status to user
+   - Only resume if user explicitly asks you to wait
+   - Kill long-running tasks if they're not actively being used
+4. **User Awareness**: Always inform user when delegating background work
+   - Report progress
+   - Notify when complete
+   - Don't leave tasks silently running
+
+**Example**:
+```
+User: "Research X"
+You: [Delegating to GLM with run_in_background=true]
+You: "GLM is researching... I'll check results shortly"
+[Check after 30-60 seconds]
+You: "Here are the results: ..."
+```
+
+---
+
+## Examples
+
+### Example 1: Large Refactoring
+```
+User: "Refactor AuthService to use dependency injection"
+
+Claude: [Analyzes complexity, decides context is tight]
+Claude: "[Delegating to GLM: Map all dependencies in AuthService]"
+[GLM returns: Found 47 dependencies across 8 modules]
+
+Claude: "I've mapped the dependencies (47 found). Here's the refactoring plan..."
+User: "Proceed"
+Claude: [Implements refactoring with full knowledge]
+```
+
+### Example 2: Understanding Existing Pattern
+```
+User: "How does the caching system work?"
+
+Claude: [Detects unfamiliar codebase, delegates exploration]
+Claude: "[Delegating to GLM: Map caching system architecture]"
+[GLM explores and reports findings]
+
+Claude: "The caching system works like this:
+- Layer 1: In-memory cache (GLM found in src/cache/memory.ts)
+- Layer 2: Redis layer (src/cache/redis.ts)
+- Invalidation strategy: (GLM findings)..."
+```
+
+### Example 3: Quick Lookup
+```
+User: "Where is error handling configured?"
+
+Claude: [Quick scan needed, delegates]
+Claude: [Runs: glm --skip "find error handling configuration"]
+Claude: "Error handling is configured in src/middleware/errorHandler.ts
+         and src/config/errors.json"
+```
+
+---
+
+## Technical Details
+
+**GLM Command**: `~/.local/bin/glm`
+- Automatically configured with Z.AI API
+- Uses `--skip` flag to bypass permission prompts
+- 50-minute timeout for long operations
+
+**API Configuration**:
+- Endpoint: `https://api.z.ai/api/anthropic`
+- Auth: Via GLM_API_KEY environment variable
+- Timeout: 3000000ms (50 minutes)
+
+**Command Usage**:
+```bash
+glm --skip "describe the module structure"
+glm --skip "map all API endpoints"
+glm --skip "find database queries"
+```
+
+---
+
+## User Control
+
+Users can override delegation:
+- "Without GLM" → Skip delegation
+- "Use GLM to..." → Force delegation
+- Normal question → Your intelligence decides
+
+The goal is transparent, helpful exploration that preserves your context for decision-making and implementation.

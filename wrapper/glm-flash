@@ -1,0 +1,326 @@
+#!/bin/bash
+# ============================================================================
+# GLM-FLASH WRAPPER FOR CLAUDE CODE - FAST MODEL + SEARCH + VISION
+# ============================================================================
+# Fast GLM-4.7-Flash-PRISM wrapper with Google Search MCP + Vision Proxy
+# - 168k context (optimized for 4090 24GB)
+# - Google Search MCP as primary
+# - Vision via OpenRouter (z-ai/glm-4.6v)
+# - Auto-start local server and image routing proxy
+# - Separate conversation history
+#
+# CONFIGURATION:
+# Set these environment variables to match your setup:
+#   GLM_FLASH_SERVER_DIR - Path to your GLM-4.7-Flash model directory
+#   GLM_FLASH_PORT - Local server port (default: 8082)
+#   OPENROUTER_API_KEY - OpenRouter API key for vision
+# ============================================================================
+
+# Source the base wrapper framework
+WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${WRAPPER_DIR}/../lib/base-wrapper.sh"
+
+# ============================================================================
+# WRAPPER CONFIGURATION
+# ============================================================================
+
+# Basic wrapper info
+WRAPPER_NAME="glm-flash"
+WRAPPER_VERSION="2.1"
+WRAPPER_DESCRIPTION="Fast GLM-4.7-Flash-PRISM (RTX 4090) with Google Search MCP + Vision"
+
+# Vision support - GLM-4.7-Flash does NOT support vision locally
+# But we'll use OpenRouter vision proxy for image routing
+SUPPORTS_VISION=false
+VISION_WRAPPER="glm-prism-local"
+
+# ============================================================================
+# PROVIDER-SPECIFIC CONFIGURATION
+# ============================================================================
+
+# Local server configuration - use environment variable or default
+LOCAL_PORT="${GLM_FLASH_PORT:-8082}"
+LOCAL_HOST="localhost"
+LOCAL_URL="http://${LOCAL_HOST}:${LOCAL_PORT}"
+
+# Server directory - configurable via environment variable
+SERVER_DIR="${GLM_FLASH_SERVER_DIR:-$HOME/AI/GLM-4.7-Flash-PRISM}"
+SERVER_SCRIPT="$SERVER_DIR/start-local-server.sh"
+SERVER_PID_FILE="$SERVER_DIR/glm-4.7-flash-server.pid"
+
+# Vision backend configuration: 'openrouter' for vision requests
+VISION_BACKEND_TYPE="openrouter"
+OPENROUTER_MODEL="${OPENROUTER_MODEL:-z-ai/glm-4.6v}"
+
+# Image routing proxy configuration (sits in front of local server)
+IMAGE_ROUTING_PROXY_PORT="${IMAGE_ROUTING_PROXY_PORT:-9101}"
+IMAGE_ROUTING_PROXY_HOST="127.0.0.1"
+IMAGE_ROUTING_PROXY_URL="http://${IMAGE_ROUTING_PROXY_HOST}:${IMAGE_ROUTING_PROXY_PORT}"
+
+# API configuration - ROUTES THROUGH IMAGE PROXY
+API_BASE_URL="$IMAGE_ROUTING_PROXY_URL"
+API_TIMEOUT_MS="${API_TIMEOUT_MS:-3000000}"
+API_AUTH_TOKEN="sk-ant-local-glm-flash-dummy-key"
+
+# Model mappings
+DEFAULT_HAIKU_MODEL="glm-4.7-flash-prism"
+DEFAULT_SONNET_MODEL="glm-4.7-flash-prism"
+DEFAULT_OPUS_MODEL="glm-4.7-flash-prism"
+
+# Context size - 198k (MAX) for GLM-4.7-Flash with V-less cache
+# GPU Usage: ~22GB/24GB with 198k (V-less cache saves ~9GB VRAM)
+# Server configured for 202752 tokens (198k) - model native max
+CONTEXT_SIZE="${GLM_FLASH_CONTEXT_SIZE:-198000}"
+
+# ============================================================================
+# SERVICE MANAGEMENT
+# ============================================================================
+
+start_image_routing_proxy() {
+    log_info "Starting image routing proxy..."
+
+    # Check if proxy is already running
+    if curl -s --max-time 2 "$IMAGE_ROUTING_PROXY_URL/" &>/dev/null; then
+        log_success "Image routing proxy already running at $IMAGE_ROUTING_PROXY_URL"
+        return 0
+    fi
+
+    # Start proxy in background
+    local proxy_log="/tmp/glm-flash-image-routing-proxy.log"
+    local proxy_script="${WRAPPER_DIR}/../lib/image-routing-proxy.py"
+
+    if [[ ! -f "$proxy_script" ]]; then
+        log_error "Proxy script not found at $proxy_script"
+        return 1
+    fi
+
+    log_info "Starting image routing proxy on port $IMAGE_ROUTING_PROXY_PORT..."
+    log_info "  - Original backend: $LOCAL_URL (GLM-4.7-Flash)"
+    log_info "  - Vision backend type: $VISION_BACKEND_TYPE"
+    log_info "  - OpenRouter model: $OPENROUTER_MODEL"
+
+    # Get OpenRouter API key from environment
+    if [[ -z "$OPENROUTER_API_KEY" ]]; then
+        log_warning "⚠️  OPENROUTER_API_KEY not set - vision requests will fail"
+        log_warning "Set it with: export OPENROUTER_API_KEY='your-key'"
+    fi
+
+    nohup python3 "$proxy_script" \
+        --port "$IMAGE_ROUTING_PROXY_PORT" \
+        --original-api "$LOCAL_URL" \
+        --vision-api-type openrouter \
+        --openrouter-model "$OPENROUTER_MODEL" \
+        > "$proxy_log" 2>&1 &
+
+    local proxy_pid=$!
+    echo "$proxy_pid" > "/tmp/glm-flash-image-routing-proxy.pid"
+
+    log_info "Image routing proxy starting (PID: $proxy_pid)..."
+
+    # Wait for proxy to be ready
+    local wait_time=0
+    local max_wait=10
+    while [ $wait_time -lt $max_wait ]; do
+        if curl -s --max-time 1 "$IMAGE_ROUTING_PROXY_URL/" &>/dev/null; then
+            log_success "✅ Image routing proxy ready!"
+            return 0
+        fi
+        sleep 1
+        wait_time=$((wait_time + 1))
+    done
+
+    log_error "Image routing proxy failed to start"
+    log_error "Check logs: tail -f $proxy_log"
+    return 1
+}
+
+start_services() {
+    log_info "Checking if GLM-4.7-Flash server needs to be started..."
+
+    # Check if server is already running (from previous session)
+    if [[ -f "$SERVER_PID_FILE" ]]; then
+        local old_pid=$(cat "$SERVER_PID_FILE")
+        if kill -0 "$old_pid" 2>/dev/null; then
+            log_info "Killing old server process (PID: $old_pid)..."
+            kill "$old_pid" 2>/dev/null
+            sleep 2
+        fi
+        rm -f "$SERVER_PID_FILE"
+    fi
+
+    # Also check port
+    local port_pid=$(lsof -ti:"$LOCAL_PORT" 2>/dev/null)
+    if [[ -n "$port_pid" ]]; then
+        log_info "Clearing port $LOCAL_PORT (PID: $port_pid)..."
+        kill -9 "$port_pid" 2>/dev/null
+        sleep 1
+    fi
+
+    # Server not running, start it
+    log_info "Starting GLM-4.7-Flash server..."
+
+    # Check if script exists
+    if [[ ! -f "$SERVER_SCRIPT" ]]; then
+        log_error "Server script not found at $SERVER_SCRIPT"
+        echo "Please check that the GLM-4.7-Flash server is installed."
+        echo "Set GLM_FLASH_SERVER_DIR to your model directory."
+        exit 1
+    fi
+
+    # Start server in background
+    cd "$SERVER_DIR"
+    nohup "$SERVER_SCRIPT" > /tmp/glm-flash-server.log 2>&1 &
+    local server_pid=$!
+
+    log_info "Server starting (PID: $server_pid)..."
+    log_info "Waiting for server to be ready (this may take 10-30 seconds)..."
+
+    # Wait for server to be ready (max 90 seconds for model loading)
+    local wait_time=0
+    local max_wait=90
+    while [ $wait_time -lt $max_wait ]; do
+        if curl -s --max-time 2 "$LOCAL_URL/health" &>/dev/null || \
+           curl -s --max-time 2 "$LOCAL_URL/v1/models" &>/dev/null; then
+            log_success "Server ready!"
+            break
+        fi
+        sleep 2
+        wait_time=$((wait_time + 2))
+        echo -n "."
+    done
+    echo ""
+
+    if [ $wait_time -ge $max_wait ]; then
+        log_warning "Server taking longer than expected"
+        log_warning "Check logs: tail -f /tmp/glm-flash-server.log"
+        log_warning "Continuing anyway..."
+    fi
+
+    # Verify Google Search MCP is available
+    if claude mcp list 2>/dev/null | grep -q "googlesearch.*✓"; then
+        log_success "✅ Google Search MCP is available"
+    else
+        log_warning "⚠️  Google Search MCP not detected"
+        log_warning "Run: claude mcp list"
+    fi
+
+    # Start image routing proxy
+    start_image_routing_proxy
+
+    return 0
+}
+
+stop_services() {
+    log_info "Stopping services..."
+
+    # Stop image routing proxy
+    if [[ -f /tmp/glm-flash-image-routing-proxy.pid ]]; then
+        local proxy_pid=$(cat /tmp/glm-flash-image-routing-proxy.pid)
+        if kill -0 "$proxy_pid" 2>/dev/null; then
+            log_info "Stopping image routing proxy (PID: $proxy_pid)..."
+            kill "$proxy_pid" 2>/dev/null || true
+            rm -f /tmp/glm-flash-image-routing-proxy.pid
+        fi
+    fi
+
+    # Stop the local server
+    log_info "Stopping GLM-4.7-Flash server..."
+
+    # Read PID file if it exists
+    if [[ -f "$SERVER_PID_FILE" ]]; then
+        local server_pid=$(cat "$SERVER_PID_FILE")
+        if kill -0 "$server_pid" 2>/dev/null; then
+            log_info "Killing server (PID: $server_pid)..."
+            kill "$server_pid" 2>/dev/null
+            # Give it a moment to exit gracefully
+            sleep 2
+            # Force kill if still running
+            kill -9 "$server_pid" 2>/dev/null
+            rm -f "$SERVER_PID_FILE"
+            log_success "Server stopped"
+        else
+            rm -f "$SERVER_PID_FILE"
+        fi
+    fi
+
+    # Also kill any processes on the port
+    local port_pids=$(lsof -ti:"$LOCAL_PORT" 2>/dev/null)
+    if [[ -n "$port_pids" ]]; then
+        log_info "Cleaning up port $LOCAL_PORT..."
+        echo "$port_pids" | xargs kill -9 2>/dev/null
+    fi
+
+    log_success "All services stopped, model unloaded"
+}
+
+# ============================================================================
+# SETTINGS GENERATION
+# ============================================================================
+
+generate_settings() {
+    cat << EOF
+{
+    "env": {
+        "ANTHROPIC_AUTH_TOKEN": "$API_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL": "$API_BASE_URL",
+        "API_TIMEOUT_MS": "$API_TIMEOUT_MS",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "$DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "$DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "$DEFAULT_OPUS_MODEL",
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "$CONTEXT_SIZE"
+    },
+    "disallowedTools": ["WebSearch"],
+    "appendSystemPrompt": "\\n\\n# Google Search Integration\\n\\nYou have access to Google Custom Search via the 'googlesearch' MCP server.\\n\\n## When to Use Google Search\\n\\nUse the 'google_search' tool when:\\n- User asks to search, find, or look up current information\\n- User asks for latest, recent, or today's information\\n- User needs real-time web data\\n- User explicitly requests a web search\\n\\n## How to Use\\n\\nCall the 'google_search' tool:\\n\\n{\\n  \\"name\\": \\"google_search\\",\\n  \\"arguments\\": {\\n    \\"query\\": \\"your search query\\",\\n    \\"num_results\\": 10\\n  }\\n}\\n\\nThe tool returns formatted results with titles, snippets, and URLs. Synthesize the information and cite sources.\\n\\n**Important**: This is your PRIMARY web search tool. Use it immediately when current information is needed.\\n\\n---\\n\\n# Vision Analysis Integration\\n\\nYou have access to image analysis tools via the 'visionproxy' MCP server.\\n\\n## PRIMARY Tool: describe_image\\n\\nFor ANY image analysis question, START with 'describe_image' tool:\\n- Provides natural language description via OpenRouter vision AI\\n- Use for: \\"What's in this image?\\", \\"Describe this\\", \\"Analyze this photo\\"\\n- Returns human-readable text (NOT JSON)\\n\\n## SECONDARY Tools (Use ONLY if explicitly requested)\\n\\n1. **analyze_image** - Technical specs (dimensions, colors, brightness)\\n   - Only when user asks for: \\"dimensions\\", \\"resolution\\", \\"color stats\\"\\n\\n2. **detect_faces** - Face detection (count, positions, features)\\n   - Only when user asks for: \\"how many faces\\", \\"face detection\\", \\"where are the faces\\"\\n\\n3. **get_image_metadata** - EXIF data (camera settings, GPS, timestamps)\\n   - Only when user asks for: \\"camera settings\\", \\"EXIF\\", \\"when was this taken\\"\\n\\n## Output Format Rules\\n\\n- **DEFAULT**: Natural language descriptions (conversational, human-readable)\\n- **Convert JSON to prose**: \\"The image is 1920x1080 with warm colors\\" NOT raw JSON dumps\\n- **ONLY show raw JSON** if user explicitly asks for \\"JSON output\\" or \\"raw data\\"\\n\\n## Usage Pattern\\n\\n- User pastes image → Vision proxy handles automatically\\n- User provides file path → Use 'describe_image' first, add technical tools only if requested"
+}
+EOF
+}
+
+# ============================================================================
+# ARGUMENT PROCESSING
+# ============================================================================
+
+custom_process_arguments() {
+    # Call base processing first
+    process_arguments "$@"
+
+    # Generate settings and add to arguments
+    local settings_json=$(generate_settings)
+    FINAL_ARGS=("--settings" "$settings_json" "${PROCESSED_ARGS[@]}")
+}
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+main() {
+    # Set wrapper info
+    export WRAPPER_NAME WRAPPER_VERSION WRAPPER_DESCRIPTION
+    export SUPPORTS_VISION VISION_WRAPPER
+
+    # Show wrapper header
+    echo "╭─────────────────────────────────────────────────────────────╮"
+    echo "│  ⚡ GLM-FLASH v$WRAPPER_VERSION - Fast Model + Search + Vision    │"
+    echo "│  Data: ~/.claude-data/$WRAPPER_NAME                           │"
+    echo "│  Proxy: $IMAGE_ROUTING_PROXY_URL                     │"
+    echo "│  Text: $LOCAL_URL (GLM-4.7-Flash)                  │"
+    echo "│  Vision: OpenRouter ($OPENROUTER_MODEL)         │"
+    echo "│  Context: 198k tokens (MAX, ~22GB VRAM, V-less cache)       │"
+    echo "│  Search: 🔍 Google MCP (PRIMARY)                             │"
+    echo "│  GPU: RTX 4090 24GB                                          │"
+    echo "╰─────────────────────────────────────────────────────────────╯"
+    echo ""
+
+    # Process arguments with custom logic
+    custom_process_arguments "$@"
+
+    # Prepare final execution
+    export PROCESSED_ARGS=("${FINAL_ARGS[@]}")
+
+    # Execute wrapper
+    execute_wrapper "${FINAL_ARGS[@]}"
+}
+
+# Run main if script is executed directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

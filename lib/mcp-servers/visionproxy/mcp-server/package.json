@@ -1,0 +1,22 @@
+{
+  "name": "vision-proxy-mcp",
+  "version": "1.0.0",
+  "description": "Vision analysis MCP server with OpenCV-style tools and OpenRouter integration",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "node-fetch": "^3.3.2"
+  },
+  "keywords": [
+    "mcp",
+    "vision",
+    "image-analysis",
+    "openrouter"
+  ],
+  "author": "",
+  "license": "MIT"
+}

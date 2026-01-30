@@ -1,0 +1,12 @@
+{
+  "name": "google-search",
+  "version": "1.0.0",
+  "description": "Fallback Google Search for when WebSearch fails or is unavailable. Use this skill explicitly with /google-search or when the built-in WebSearch isn't working.",
+  "author": "",
+  "location": "user",
+  "type": "prompt",
+  "autoExecute": {
+    "enabled": false
+  },
+  "prompt": "google-search.md"
+}

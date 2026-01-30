@@ -1,0 +1,9 @@
+{
+  "name": "vision-analysis",
+  "description": "Advanced image analysis using OpenCV, metadata extraction, and vision AI",
+  "trigger": "vision",
+  "prompts": {
+    "default": "vision-analysis.md"
+  },
+  "mode": "non-aggressive"
+}
