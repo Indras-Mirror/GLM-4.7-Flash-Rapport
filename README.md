@@ -120,7 +120,22 @@ ln -s "$(pwd)/wrapper/glm-flash" ~/.local/bin/glm-flash
 
 ### 5. Configure MCP Servers
 
-Add to your `~/.config/Claude/claude_desktop_config.json`:
+**Option A: Automatic Setup (Recommended)**
+
+```bash
+cd /path/to/GLM-4.7-Flash-Rapport/claude-code-config
+./claude-code-mcp-setup.sh
+```
+
+This script automatically:
+- Finds your Claude Code config directory
+- Adds googlesearch and visionproxy MCP servers
+- Installs the skills to `~/.claude/skills/`
+- Creates a backup of your existing config
+
+**Option B: Manual Setup**
+
+Add to your `~/.config/Claude/claude_desktop_config.json` (or `~/.config/claude-code/settings.json`):
 
 ```json
 {
@@ -271,7 +286,8 @@ GLM-4.7-Flash-Rapport/
 │   └── mcp-servers/
 │       ├── googlesearch/      # Google Search MCP server
 │       └── visionproxy/       # Vision MCP server + Python scripts
-├── skills/                    # Claude Code skills
+├── skills/                    # Claude Code skills (google-search, vision-analysis)
+├── claude-code-config/        # Claude Code MCP setup script + templates
 ├── utils/                     # Standalone proxy servers (alternative)
 ├── assets/                    # Screenshots
 ├── llama-cpp-settings.sh      # Reference llama.cpp configuration
