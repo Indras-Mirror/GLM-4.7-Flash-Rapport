@@ -29,6 +29,18 @@ This wrapper uses **MCP (Model Context Protocol) servers** for Google Search and
 - **Separate Conversation History**: Isolated conversation data per wrapper
 - **Auto Service Management**: Automatic server startup/shutdown
 
+### Image Routing
+
+The wrapper automatically detects image requests and routes them to a vision-capable model (OpenRouter) while text requests go to the local GLM-4.7-Flash model.
+
+![Image Routing](assets/Image-Routing-Rapport.png)
+
+### Google Search Integration
+
+Google Search is available via the MCP server, providing fast web search results directly within Claude Code.
+
+![Google Search](assets/WebSearch-Rapport.png)
+
 ## System Requirements
 
 - Linux system
