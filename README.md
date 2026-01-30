@@ -306,6 +306,91 @@ MCP servers solve this with direct stdio integration, cleaner conversations, and
 
 See `utils/README.md` for details on the standalone proxy servers.
 
+---
+
+## Google Search Setup Help
+
+**This was the hardest part to get working. Here are some tips:**
+
+### Common Issues and Fixes
+
+#### Issue: "Search returns no results"
+
+**Most likely cause**: "Search the entire web" toggle not enabled.
+
+**Fix**:
+1. Go to https://cse.google.com/
+2. Click your search engine → "Control Panel"
+3. Under "Setup" → Look for "Search the entire web"
+4. Toggle it **ON**
+5. Click "Save"
+
+#### Issue: "API key errors" or "forbidden"
+
+**Most likely cause**: API restrictions or Custom Search API not enabled.
+
+**Fix**:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. APIs & Services → Library → Search "Custom Search API"
+3. Click it and press "Enable" if not already enabled
+4. APIs & Services → Credentials → Edit your API key
+5. Under "API restrictions", select ONLY "Custom Search API"
+6. Under "Application restrictions", select "None" (for local testing)
+
+#### Issue: "Getting same few results only"
+
+**Most likely cause**: Search engine configured for specific sites only.
+
+**Fix**:
+1. Go to https://cse.google.com/
+2. Your search engine → "Setup" tab
+3. Under "Sites to search", add: `*.www.google.com` (or remove site restrictions)
+4. Enable "Search the entire web" toggle
+5. Save
+
+#### Issue: "CX ID not found"
+
+**Most likely cause**: Looking in wrong place or not created yet.
+
+**Fix**:
+1. Go to https://cse.google.com/ (not Google Cloud Console)
+2. You MUST create a Custom Search Engine first
+3. After creating, click "Control Panel"
+4. Under "Setup" → "Search engine ID" is your CX
+5. It looks like: `017576662512468239146:abc123def45`
+
+#### Issue: "Daily limit exceeded"
+
+**Cause**: Google Custom Search API has free tier limits (100 searches/day).
+
+**Solutions**:
+- The free tier should be plenty for testing
+- If you hit this, wait 24 hours or enable billing (you won't be charged much for personal use)
+
+### Quick Test Command
+
+```bash
+# Test your API keys directly
+curl "https://www.googleapis.com/customsearch/v1?key=$GOOGLE_SEARCH_API_KEY&cx=$GOOGLE_SEARCH_CX&q=test+query&num=5"
+```
+
+**Expected response**: JSON with `"items"` array containing search results.
+
+**If you get errors**:
+- `400` → API key invalid or restrictions wrong
+- `403` → Custom Search API not enabled
+- No `"items"` → "Search the entire web" not enabled
+
+### Minimum Viable Setup
+
+If you just want to test quickly:
+
+1. **API Key**: Get from https://console.cloud.google.com/apis/credentials
+2. **CX ID**: Get from https://cse.google.com/ (create ANY search engine, then enable "Search the entire web")
+3. **Test**: Run the curl command above
+
+Don't overthink the search engine configuration — the "Search the entire web" toggle is the magic setting that makes it work like normal Google.
+
 ## License
 
 MIT License
